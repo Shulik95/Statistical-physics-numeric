@@ -1,6 +1,8 @@
 import numpy as np
+import sklearn
 from matplotlib import pyplot as plt
 import random
+from sklearn.preprocessing import normalize
 
 
 def numeric_warmup(N_a=100, N_b=100, q_a=300, q_b=0):
@@ -51,25 +53,48 @@ def metropolis_algo(N=100, theta=2.5):
     for j in range(10 ** 7):
         i = np.random.randint(0, N)  # choose particle
         del_q = random.choice([-1, 1])
-        if del_q == -1 and solid[i] != 0:
-            solid[i] -= 1  # remove 1 unit from particle
-        elif del_q == 1:
-            p = np.random.uniform(0, 1)
-            if p <= func:
-                solid[i] += 1
+        update_solid(del_q, func, i, solid)
         q_tot.append(sum(solid))  # track total energy
         q_single_part.append(solid[0])  # track energy of first particle
         if j in [2 * (10 ** 6), 4 * (10 ** 6), 6 * (10 ** 6), 8 * (10 ** 6)]:
-            plt.hist(solid, bins=bins, color='skyblue', ec='b', lw=0.02)
-            plt.title("Histogram after " + str(j) + " iterations")
-            plt.savefig("histogram after " + str(j) + " iteration.jpeg")
-            plt.show()
-    plt.hist(solid, bins=bins, color='skyblue'), plt.title("Final histogram"), plt.savefig('final_histo.jpeg')
+            plt.hist(solid, bins=bins, lw=1, histtype='step',
+                     label=str(j) + " Iterations")
+            # plt.title("Histogram after " + str(j) + " iterations")
+            # plt.savefig("histogram after " + str(j) + " iteration.jpeg")
+            # plt.show()
+    plt.hist(solid, bins=bins, linewidth=1, histtype='step', label=str(10 ** 7) + " Iterations")
+    plt.savefig("histograms_united.jpeg"), plt.legend(loc='upper right'), plt.xlabel("Units of energy"), plt.ylabel("# of particles")
     plt.show()
+
+    # plt.title("Final histogram"), plt.savefig('final_histogram.jpeg')
+
+    plt.show()
+    plt.hist(q_single_part, bins=bins, color='skyblue', density=True, align='mid', edgecolor='black', linewidth=1)
+    plt.title("Single particle"), plt.xlabel("q"), plt.ylabel("% of steps"), plt.savefig(
+        "Single particle cumulative histogram")
+    plt.show()
+    plt.plot(range(10 ** 7),np.array(q_tot), color='lightcoral'), plt.xlabel("# of steps"), plt.ylabel(r'$q_t$'), plt.title(r'$q_t$ vs. # of steps')
+    plt.savefig("q_t vs. steps.jpeg"), plt.show()
+
+
+def update_solid(del_q, func, i, solid):
+    """
+    updates energy units according to algorithm
+    :param del_q: integer - the change in energy
+    :param func:
+    :param i: particle idx
+    :param solid: array representing the different particles
+    """
+    if del_q == -1 and solid[i] != 0:
+        solid[i] -= 1  # remove 1 unit from particle
+    elif del_q == 1:
+        p = np.random.uniform(0, 1)
+        if p <= func:
+            solid[i] += 1
 
 
 if __name__ == '__main__':
     # numeric_warmup(100, 100, 300, 0)
     # plt.savefig('q_a & q_b vs. number of iterations.jpg')
     # plt.show()
-    metropolis_algo()
+    metropolis_algo(theta=5)
