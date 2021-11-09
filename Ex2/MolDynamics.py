@@ -1,5 +1,4 @@
 import math
-
 import numpy as np
 from numpy.linalg import norm
 from matplotlib import pyplot as plt
@@ -55,22 +54,96 @@ class Particle:
 class Simulation:
     """simulation of circular particles in motion"""
 
-    def __init__(self, v_table, p_table, nparticles=4):
+    def __init__(self, v_table, p_table, nparticles=4, tot_v=2, dtstore=1, N=10 ** 7):
         self.v_table = v_table
         self.p_table = p_table
-        self.particles = [self.init_particles(p_table, v_table, i) for i in range(nparticles)]
+        self.particles = [self.init_particles(i) for i in range(nparticles)]
         self.x = np.linspace()
+        self.nparticles = nparticles
+        self.tot_v = tot_v
+        self.t = 0
+        self.collision = 0
+        self.dtstore = dtstore
+        self.N = N
 
-    def init_particles(self, p_table, v_table, row):
+    def init_particles(self, row):
         """
         return a new Particle object with position and velocity according
-        to tables.
-        :param p_table: table of size 4x2 where each row is the x&y position of
-        the particle corresponding to that row.
-        :param v_table: table of size 4x2 where each row is the vx&vy of
-        the particle corresponding to that row.
+        to corresponding tables.
         """
-        pass
+        x, y = self.p_table[row]
+        vx, vy = self.v_table[row]
+        return Particle(x, y, vx, vy)
+
+    def advance(self):
+        """
+        advances the system the following way:
+        for each time t:
+            (1) for each particles check time to collision with wall
+            (2) check time for collision between all particles
+            (3) define dt = min{dtwall, dtcoll}
+            (4) advance position of all particles according to dt
+            (5) update time by dt and update speed of particle(s)
+        """
+        # find minimal time until next collision with wall or particle
+        dtwall, p0 = min([(self.particles[i].time_to_wall(), i) for i in range(self.nparticles)], key=lambda t: t[0])
+
+        min_dtcoll, p1, p2 = self.find_min_dtcoll()
+        dt = min(dtwall, min_dtcoll)
+
+        # update particle location
+        for particle in self.particles:
+            particle.pos[0] = particle.pos[0] + particle.vel[0] * dt
+            particle.pos[1] = particle.pos[1] + particle.vel[1] * dt
+
+        # update time and velocity of colliding particles
+        self.t = self.t + dt
+        if dtwall < min_dtcoll:
+            self.update_vel_wall(p0)
+        else:
+            self.update_vel_coll(p1, p2)
+
+    def find_min_dtcoll(self):
+        """
+        finds the minimal time until collision between two particles.
+        :return: minimal collision time, idx of the two colliding particles.
+        """
+        min_dtcoll, p1, p2 = math.inf, None, None
+        for i in range(self.nparticles):
+            for j in range(i + 1, self.nparticles):
+                dtcoll = self.particles[i].time_to_particle(self.particles[j])
+                if dtcoll < min_dtcoll:
+                    min_dtcoll = dtcoll
+                    p1, p2 = i, j
+        return min_dtcoll, p1, p2
+
+    def update_vel_wall(self, p0):
+        """
+        updates particle velocity after collision with wall
+        :param p0: idx of the particle which collided
+        """
+        if self.particles[p0].pos[0] in [0, 1]:
+            self.particles[p0].vel[0] = -self.particles[p0].vel[0]
+        else:
+            self.particles[p0].vel[1] = -self.particles[p0].vel[1]
+
+    def update_vel_coll(self, p1, p2):
+        """
+        updates velocity for particles after collision.
+        :param p1: idx of 1st particle
+        :param p2: idx of 2nd particle
+        """
+        delta_pos = self.particles[p1].pos - self.particles[p2].pos
+        delta_vel = self.particles[p1].vel - self.particles[p2].vel
+        deltal = norm(delta_pos)
+        # deltav = norm(delta_vel)
+        ex = delta_pos[0] / deltal
+        ey = delta_pos[1] / deltal
+        s_v = delta_vel[0] * ex + delta_vel[1] * ey
+        self.particles[p1].vel[0] = self.particles[p1].vel[0] + ex * s_v
+        self.particles[p1].vel[1] = self.particles[p1].vel[1] + ey * s_v
+        self.particles[p2].vel[0] = self.particles[p2].vel[0] - ex * s_v
+        self.particles[p2].vel[1] = self.particles[p2].vel[1] - ey * s_v
 
 
 if __name__ == '__main__':
