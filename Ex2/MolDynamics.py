@@ -61,10 +61,10 @@ class Simulation:
         self.particles = [self.init_particles(i) for i in range(nparticles)]
         self.nparticles = nparticles
         self.tot_v = tot_v
-        self.t = 0
-        self.collision = 0
         self.dtstore = dtstore
-        self.N = N
+        self.t = 0
+        self.stored = 1
+        self.collision = 0
 
     def init_particles(self, row):
         """
@@ -125,9 +125,9 @@ class Simulation:
         :param p0: idx of the particle which collided
         """
         if self.particles[p0].pos[0] in [0, 1]:
-            self.particles[p0].vel[0] = -self.particles[p0].vel[0]
+            self.particles[p0].vel[0] *= -1
         else:
-            self.particles[p0].vel[1] = -self.particles[p0].vel[1]
+            self.particles[p0].vel[1] *= -1
 
     def update_vel_coll(self, p1, p2):
         """
@@ -270,29 +270,10 @@ if __name__ == '__main__':
     p_table = np.array([[0.25, 0.25], [0.25, 0.75], [0.75, 0.25], [0.75, 0.75]])
     v_table = np.array([[0.21, 0.12], [0.71, 0.18], [-0.23, -0.79], [0.78, 0.34583]])
     box = [[0 for i in range(10)] for j in range(10)]  # grid to represent location.
-    vx_arr0 = [0] * 200  # array for velocity
-    vy_arr0 = [0] * 200
-    vx_arr1 = [0] * 200
-    vy_arr1 = [0] * 200
-    vx_arr2 = [0] * 200
-    vy_arr2 = [0] * 200
-    vx_arr3 = [0] * 200
-    vy_arr3 = [0] * 200
-    s_arr0 = [0] * 100  # array for speed
-    s_arr1 = [0] * 100
-    s_arr2 = [0] * 100
-    s_arr3 = [0] * 100
     sim = Simulation(v_table, p_table)
-    while sim.collision < 10 ** 7:
-        #print(sim.collision)
-        print(sim.t)
-        sim.advance()
-        tempx, tempy = sim.particles[0].pos
-        box[int(np.floor(tempx*10))][int(np.floor(tempy*10))] += 1
-    dtstore = 1 / sim.t
-    fig, ax = plt.subplots()
-    im, cbar = __heatmap(np.array(box), np.linspace(0, 1, 10), np.linspace(0, 1, 10))
-    plt.tight_layout()
-    plt.show()
+    while sim.collision < 10**7:
+        pass
+
+
 
 
