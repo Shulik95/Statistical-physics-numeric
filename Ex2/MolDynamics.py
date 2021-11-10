@@ -1,6 +1,7 @@
 import math
 import numpy as np
 from numpy.linalg import norm
+import matplotlib
 from matplotlib import pyplot as plt
 
 
@@ -40,8 +41,8 @@ class Particle:
         :return:
         """
         vx, vy = self.vel
-        dtwall_x = (1 - self.rad) / vx if vx > 0 else self.rad / abs(vx)
-        dtwall_y = (1 - self.rad) / vy if vy > 0 else self.rad / abs(vy)
+        dtwall_x = (1 - self.rad - self.pos[0]) / vx if vx > 0 else (self.pos[0] - self.rad) / abs(vx)
+        dtwall_y = (1 - self.rad - self.pos[1]) / vy if vy > 0 else (self.pos[1] - self.rad) / abs(vy)
         return min(dtwall_y, dtwall_x)
 
     def get_speed(self):
@@ -58,7 +59,6 @@ class Simulation:
         self.v_table = v_table
         self.p_table = p_table
         self.particles = [self.init_particles(i) for i in range(nparticles)]
-        self.x = np.linspace()
         self.nparticles = nparticles
         self.tot_v = tot_v
         self.t = 0
@@ -90,18 +90,20 @@ class Simulation:
 
         min_dtcoll, p1, p2 = self.find_min_dtcoll()
         dt = min(dtwall, min_dtcoll)
+        print(dt)
 
         # update particle location
         for particle in self.particles:
-            particle.pos[0] = particle.pos[0] + particle.vel[0] * dt
-            particle.pos[1] = particle.pos[1] + particle.vel[1] * dt
+            particle.advance(dt)
 
         # update time and velocity of colliding particles
         self.t = self.t + dt
         if dtwall < min_dtcoll:
             self.update_vel_wall(p0)
+            self.collision += 1
         else:
             self.update_vel_coll(p1, p2)
+            self.collision += 1
 
     def find_min_dtcoll(self):
         """
@@ -146,6 +148,151 @@ class Simulation:
         self.particles[p2].vel[1] = self.particles[p2].vel[1] - ey * s_v
 
 
+def __heatmap(data, row_labels, col_labels, ax=None,
+              cbar_kw={}, cbarlabel="", **kwargs):
+    """
+    Create a heatmap from a numpy array and two lists of labels.
+    Parameters
+    ----------
+    data
+        A 2D numpy array of shape (N, M).
+    row_labels
+        A list or array of length N with the labels for the rows.
+    col_labels
+        A list or array of length M with the labels for the columns.
+    ax
+        A `matplotlib.axes.Axes` instance to which the heatmap is plotted.  If
+        not provided, use current axes or create a new one.  Optional.
+    cbar_kw
+        A dictionary with arguments to `matplotlib.Figure.colorbar`.  Optional.
+    cbarlabel
+        The label for the colorbar.  Optional.
+    **kwargs
+        All other arguments are forwarded to `imshow`.
+    """
+
+    if not ax:
+        ax = plt.gca()
+
+    # Plot the heatmap
+    im = ax.imshow(data, **kwargs)
+
+    # Create colorbar
+    cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
+    cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
+
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(data.shape[1]))
+    ax.set_yticks(np.arange(data.shape[0]))
+    # ... and label them with the respective list entries.
+    ax.set_xticklabels(col_labels)
+    ax.set_yticklabels(row_labels)
+
+    # Let the horizontal axes labeling appear on top.
+    ax.tick_params(top=True, bottom=False,
+                   labeltop=True, labelbottom=False)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=-30, ha="right",
+             rotation_mode="anchor")
+
+    # Turn spines off and create white grid.
+    # ax.spines[:].set_visible(False)
+
+    ax.set_xticks(np.arange(data.shape[1] + 1) - .5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0] + 1) - .5, minor=True)
+    ax.grid(which="minor", color="w", linestyle='-', linewidth=3)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    return im, cbar
+
+
+def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
+                     textcolors=("black", "white"),
+                     threshold=None, **textkw):
+    """
+    A function to annotate a heatmap.
+
+    Parameters
+    ----------
+    im
+        The AxesImage to be labeled.
+    data
+        Data used to annotate.  If None, the image's data is used.  Optional.
+    valfmt
+        The format of the annotations inside the heatmap.  This should either
+        use the string format method, e.g. "$ {x:.2f}", or be a
+        `matplotlib.ticker.Formatter`.  Optional.
+    textcolors
+        A pair of colors.  The first is used for values below a threshold,
+        the second for those above.  Optional.
+    threshold
+        Value in data units according to which the colors from textcolors are
+        applied.  If None (the default) uses the middle of the colormap as
+        separation.  Optional.
+    **kwargs
+        All other arguments are forwarded to each call to `text` used to create
+        the text labels.
+    """
+
+    if not isinstance(data, (list, np.ndarray)):
+        data = im.get_array()
+
+    # Normalize the threshold to the images color range.
+    if threshold is not None:
+        threshold = im.norm(threshold)
+    else:
+        threshold = im.norm(data.max()) / 2.
+
+    # Set default alignment to center, but allow it to be
+    # overwritten by textkw.
+    kw = dict(horizontalalignment="center",
+              verticalalignment="center")
+    kw.update(textkw)
+
+    # Get the formatter in case a string is supplied
+    if isinstance(valfmt, str):
+        valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
+
+    # Loop over the data and create a `Text` for each "pixel".
+    # Change the text's color depending on the data.
+    texts = []
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            kw.update(color=textcolors[int(im.norm(data[i, j]) > threshold)])
+            text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+            texts.append(text)
+
+    return texts
+
+
 if __name__ == '__main__':
     p_table = np.array([[0.25, 0.25], [0.25, 0.75], [0.75, 0.25], [0.75, 0.75]])
     v_table = np.array([[0.21, 0.12], [0.71, 0.18], [-0.23, -0.79], [0.78, 0.34583]])
+    box = [[0 for i in range(10)] for j in range(10)]  # grid to represent location.
+    vx_arr0 = [0] * 200  # array for velocity
+    vy_arr0 = [0] * 200
+    vx_arr1 = [0] * 200
+    vy_arr1 = [0] * 200
+    vx_arr2 = [0] * 200
+    vy_arr2 = [0] * 200
+    vx_arr3 = [0] * 200
+    vy_arr3 = [0] * 200
+    s_arr0 = [0] * 100  # array for speed
+    s_arr1 = [0] * 100
+    s_arr2 = [0] * 100
+    s_arr3 = [0] * 100
+    sim = Simulation(v_table, p_table)
+    while sim.collision < 10 ** 7:
+        #print(sim.collision)
+        print(sim.t)
+        sim.advance()
+        tempx, tempy = sim.particles[0].pos
+        box[int(np.floor(tempx*10))][int(np.floor(tempy*10))] += 1
+    dtstore = 1 / sim.t
+    fig, ax = plt.subplots()
+    im, cbar = __heatmap(np.array(box), np.linspace(0, 1, 10), np.linspace(0, 1, 10))
+    plt.tight_layout()
+    plt.show()
+
+
