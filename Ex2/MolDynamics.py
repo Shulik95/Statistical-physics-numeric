@@ -65,6 +65,8 @@ class Simulation:
         self.t = 0
         self.stored = 1
         self.collision = 0
+        self.storage = {0: [], 1: [], 2: [], 3: []}
+        self.box = [[0 for i in range(10)] for j in range(10)]  # grid to represent location.
 
     def init_particles(self, row):
         """
@@ -86,24 +88,39 @@ class Simulation:
             (5) update time by dt and update speed of particle(s)
         """
         # find minimal time until next collision with wall or particle
-        dtwall, p0 = min([(self.particles[i].time_to_wall(), i) for i in range(self.nparticles)], key=lambda t: t[0])
+        temp = [(self.particles[i].time_to_wall(), i) for i in range(self.nparticles)]
+        dtwall, p0 = min(temp, key=lambda t: t[0])
 
         min_dtcoll, p1, p2 = self.find_min_dtcoll()
         dt = min(dtwall, min_dtcoll)
-        print(dt)
+        # print(dt)
 
         # update particle location
         for particle in self.particles:
             particle.advance(dt)
 
         # update time and velocity of colliding particles
-        self.t = self.t + dt
+        if self.t + dt > self.stored:
+            self.stored += self.dtstore
+            self.store_sim()
+
+        self.t += dt
         if dtwall < min_dtcoll:
             self.update_vel_wall(p0)
             self.collision += 1
         else:
             self.update_vel_coll(p1, p2)
             self.collision += 1
+
+    def store_sim(self):
+        """
+        stores the current vx,vy,v_abs of each particle
+        :return:
+        """
+        for p in range(4):
+            particle = self.particles[p]
+            self.box[int(np.floor(particle.pos[0] * 10))][int(np.floor(particle.pos[1] * 10))] += 1  # update location
+            self.storage[p].append([particle.vel[0], particle.vel[1], particle.get_speed()])  # store speeds
 
     def find_min_dtcoll(self):
         """
@@ -124,7 +141,7 @@ class Simulation:
         updates particle velocity after collision with wall
         :param p0: idx of the particle which collided
         """
-        if self.particles[p0].pos[0] in [0, 1]:
+        if self.particles[p0].pos[0] in [0.15, 0.85]:
             self.particles[p0].vel[0] *= -1
         else:
             self.particles[p0].vel[1] *= -1
@@ -135,8 +152,8 @@ class Simulation:
         :param p1: idx of 1st particle
         :param p2: idx of 2nd particle
         """
-        delta_pos = self.particles[p1].pos - self.particles[p2].pos
-        delta_vel = self.particles[p1].vel - self.particles[p2].vel
+        delta_pos = self.particles[p2].pos - self.particles[p1].pos
+        delta_vel = self.particles[p2].vel - self.particles[p1].vel
         deltal = norm(delta_pos)
         # deltav = norm(delta_vel)
         ex = delta_pos[0] / deltal
@@ -269,11 +286,12 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 if __name__ == '__main__':
     p_table = np.array([[0.25, 0.25], [0.25, 0.75], [0.75, 0.25], [0.75, 0.75]])
     v_table = np.array([[0.21, 0.12], [0.71, 0.18], [-0.23, -0.79], [0.78, 0.34583]])
-    box = [[0 for i in range(10)] for j in range(10)]  # grid to represent location.
+
     sim = Simulation(v_table, p_table)
-    while sim.collision < 10**7:
-        pass
-
-
-
-
+    counter = 0
+    while sim.collision < 10 ** 7:
+        sim.advance()
+    
+    im, bins = __heatmap(np.array(sim.box), np.around(np.linspace(0, 1, 10), 1), np.around(np.linspace(0, 1, 10), 1))
+    plt.tight_layout()
+    plt.show()
