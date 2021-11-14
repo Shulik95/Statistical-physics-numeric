@@ -55,7 +55,7 @@ class Particle:
 class Simulation:
     """simulation of circular particles in motion"""
 
-    def __init__(self, v_table, p_table, nparticles=4, tot_v=2, dtstore=1, N=10 ** 7):
+    def __init__(self, v_table, p_table, nparticles=4, tot_v=2, dtstore=1, rad=0.15):
         self.v_table = v_table
         self.p_table = p_table
         self.particles = [self.init_particles(i) for i in range(nparticles)]
@@ -66,7 +66,9 @@ class Simulation:
         self.stored = 1
         self.collision = 0
         self.storage = {0: [], 1: [], 2: [], 3: []}
+        self.box2 = [[0 for k in range(10)] for p in range(10)]  # grid for 2nd particle graphs.
         self.box = [[0 for i in range(10)] for j in range(10)]  # grid to represent location.
+        self.rad = rad
 
     def init_particles(self, row):
         """
@@ -75,7 +77,7 @@ class Simulation:
         """
         x, y = self.p_table[row]
         vx, vy = self.v_table[row]
-        return Particle(x, y, vx, vy)
+        return Particle(x, y, vx, vy, rad=self.rad)
 
     def advance(self):
         """
@@ -121,6 +123,8 @@ class Simulation:
             particle = self.particles[p]
             self.box[int(np.floor(particle.pos[0] * 10))][int(np.floor(particle.pos[1] * 10))] += 1  # update location
             self.storage[p].append([particle.vel[0], particle.vel[1], particle.get_speed()])  # store speeds
+        particle = self.particles[1]
+        self.box2[int(np.floor(particle.pos[0] * 10))][int(np.floor(particle.pos[1] * 10))] += 1  # update location
 
     def find_min_dtcoll(self):
         """
@@ -284,9 +288,34 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 
 
 if __name__ == '__main__':
+    # Useful definitions
     p_table = np.array([[0.25, 0.25], [0.25, 0.75], [0.75, 0.25], [0.75, 0.75]])
     v_table = np.array([[0.21, 0.12], [0.71, 0.18], [-0.23, -0.79], [0.78, 0.34583]])
+    v_hist_bins = np.linspace(-np.sqrt(2), np.sqrt(2), 200)
+    v_abs_bins = np.linspace(0, np.sqrt(2), 100)
+    pos_arr = []
+    legend_arr = [r"$v_x$", r"$v_y$"]
 
+    # comparison graphs plot
+    for r in np.arange(0.1, 0.24, 0.01):
+        sim1 = Simulation(v_table, p_table, rad=r)
+        counter = 0
+        while sim1.collision < 10 ** 7:
+            sim1.advance()
+        in_range_percentage = np.sum(np.array(sim1.box2)[0:5, 0:5]) / sim1.stored
+        pos_arr.append(in_range_percentage)
+        p2_storage = sim1.storage[1]
+        plt.hist(np.array(p2_storage).T[0], v_hist_bins, density=True, histtype='step', label='r = ' + str(r))
+    
+    plt.title(r"$P(v_x)$ comparison"), plt.xlabel(r"$v_x$"), plt.ylabel(r'$P(v_x)$'), plt.legend()
+    plt.savefig("velocity sensitivity for r "), plt.show()
+
+    plt.plot(np.arange(0.1, 0.24, 0.01), pos_arr), plt.ylabel(r"% in $1^{st}$ quarter"), plt.xlabel(
+        "Radius"), plt.title("Location sensitivity vs. Radius")
+    plt.savefig("Location sensitivity vs. Radius")
+    plt.show()
+
+    # first part graphs
     sim = Simulation(v_table, p_table)
     counter = 0
     while sim.collision < 10 ** 7:
@@ -300,10 +329,8 @@ if __name__ == '__main__':
     plt.show()
 
     # plot velocity probability
-    v_hist_bins = np.linspace(-np.sqrt(2), np.sqrt(2), 200)
-    v_abs_bins = np.linspace(0, np.sqrt(2), 100)
+
     p1_arr, p2_arr, p3_arr, p4_arr = sim.storage[0], sim.storage[1], sim.storage[2], sim.storage[3]
-    legend_arr = [r"$v_x$", r"$v_y$"]
 
     for i in range(2):
         for j, elem in enumerate([p1_arr, p2_arr, p3_arr, p4_arr]):
