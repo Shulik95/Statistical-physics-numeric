@@ -291,7 +291,31 @@ if __name__ == '__main__':
     counter = 0
     while sim.collision < 10 ** 7:
         sim.advance()
-    
-    im, bins = __heatmap(np.array(sim.box), np.around(np.linspace(0, 1, 10), 1), np.around(np.linspace(0, 1, 10), 1))
+
+    # plot heat map
+    im, bins = __heatmap(np.array(sim.box) / sim.stored, np.around(np.linspace(0, 1, 10), 1),
+                         np.around(np.linspace(0, 1, 10), 1))
+    plt.title("")
     plt.tight_layout()
+    plt.show()
+
+    # plot velocity probability
+    v_hist_bins = np.linspace(-np.sqrt(2), np.sqrt(2), 200)
+    v_abs_bins = np.linspace(0, np.sqrt(2), 100)
+    p1_arr, p2_arr, p3_arr, p4_arr = sim.storage[0], sim.storage[1], sim.storage[2], sim.storage[3]
+    legend_arr = [r"$v_x$", r"$v_y$"]
+
+    for i in range(2):
+        for j, elem in enumerate([p1_arr, p2_arr, p3_arr, p4_arr]):
+            plt.hist(np.array(elem).T[i], v_hist_bins, density=True, histtype='step', label=legend_arr[i] + str(j))
+        plt.legend()
+        plt.title(legend_arr[i] + " probability density"), plt.xlabel(legend_arr[i]), plt.ylabel("Density")
+        plt.savefig(legend_arr[i] + ".jpeg")
+        plt.show()
+
+    for idx, elem in enumerate([p1_arr, p2_arr, p3_arr, p4_arr]):
+        plt.hist(np.array(elem).T[2], v_abs_bins, density=True, histtype='step', label=r'$v_abs$ ' + str(idx))
+    plt.legend()
+    plt.title(r"$v_{abs}$ probability density"), plt.xlabel(r"$v_{abs}$"), plt.ylabel("Density")
+    plt.savefig("v_abs.jpeg")
     plt.show()
