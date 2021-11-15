@@ -58,6 +58,7 @@ class Simulation:
     def __init__(self, v_table, p_table, nparticles=4, tot_v=2, dtstore=1, rad=0.15):
         self.v_table = v_table
         self.p_table = p_table
+        self.rad = rad
         self.particles = [self.init_particles(i) for i in range(nparticles)]
         self.nparticles = nparticles
         self.tot_v = tot_v
@@ -68,7 +69,6 @@ class Simulation:
         self.storage = {0: [], 1: [], 2: [], 3: []}
         self.box2 = [[0 for k in range(10)] for p in range(10)]  # grid for 2nd particle graphs.
         self.box = [[0 for i in range(10)] for j in range(10)]  # grid to represent location.
-        self.rad = rad
 
     def init_particles(self, row):
         """
@@ -125,6 +125,7 @@ class Simulation:
             self.storage[p].append([particle.vel[0], particle.vel[1], particle.get_speed()])  # store speeds
         particle = self.particles[1]
         self.box2[int(np.floor(particle.pos[0] * 10))][int(np.floor(particle.pos[1] * 10))] += 1  # update location
+        #self.storage[1].append([particle.vel[0], particle.vel[1], particle.get_speed()])
 
     def find_min_dtcoll(self):
         """
@@ -145,7 +146,7 @@ class Simulation:
         updates particle velocity after collision with wall
         :param p0: idx of the particle which collided
         """
-        if self.particles[p0].pos[0] in [0.15, 0.85]:
+        if self.particles[p0].pos[0] in [self.rad, 1-self.rad]:
             self.particles[p0].vel[0] *= -1
         else:
             self.particles[p0].vel[1] *= -1
@@ -302,23 +303,25 @@ if __name__ == '__main__':
         counter = 0
         while sim1.collision < 10 ** 7:
             sim1.advance()
+            print(sim1.collision)
         in_range_percentage = np.sum(np.array(sim1.box2)[0:5, 0:5]) / sim1.stored
         pos_arr.append(in_range_percentage)
         p2_storage = sim1.storage[1]
         plt.hist(np.array(p2_storage).T[0], v_hist_bins, density=True, histtype='step', label='r = ' + str(r))
-    
+        print("######## " + str(r) + " ############")
+
     plt.title(r"$P(v_x)$ comparison"), plt.xlabel(r"$v_x$"), plt.ylabel(r'$P(v_x)$'), plt.legend()
     plt.savefig("velocity sensitivity for r "), plt.show()
 
-    plt.plot(np.arange(0.1, 0.24, 0.01), pos_arr), plt.ylabel(r"% in $1^{st}$ quarter"), plt.xlabel(
+    plt.scatter(np.arange(0.1, 0.24, 0.01), pos_arr), plt.ylabel(r"% in $1^{st}$ quarter"), plt.xlabel(
         "Radius"), plt.title("Location sensitivity vs. Radius")
-    plt.savefig("Location sensitivity vs. Radius")
+    plt.savefig("Location sensitivity vs Radius")
     plt.show()
 
     # first part graphs
     sim = Simulation(v_table, p_table)
     counter = 0
-    while sim.collision < 10 ** 7:
+    while sim.collision < 10 ** 6:
         sim.advance()
 
     # plot heat map
