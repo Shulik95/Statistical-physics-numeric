@@ -1,11 +1,14 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from numba import njit
 from scipy.constants import Boltzmann
 
 THREE_D = 3
 n_MAX = 100
+BASE_ENERGY = 0
 
 
+@njit
 def get_degeneracy(dim, n):
     """
     returns the degeneracy of the n-th energy level
@@ -18,6 +21,7 @@ def get_degeneracy(dim, n):
         return 1
 
 
+@njit
 def find_chem_pot(N, T, n=n_MAX):
     """
 
@@ -29,12 +33,15 @@ def find_chem_pot(N, T, n=n_MAX):
     N_try, mu_try = update_mu(T, mu_max, mu_min, n)
     while int(N_try) != N:
         if N_try > N:  # need to decrease mu_try
+            mu_max = mu_try
             N_try, mu_try = update_mu(T, mu_try, mu_min, n)
         else:  # need to increase mu_try
+            mu_min = mu_try
             N_try, mu_try = update_mu(T, mu_max, mu_try, n)
     return mu_try
 
 
+@njit
 def update_mu(T, mu_max, mu_min, n):
     """
 
@@ -44,7 +51,7 @@ def update_mu(T, mu_max, mu_min, n):
     :param n: number of energy levels
     :return: approximated number of particles, approximated chemical potential
     """
-    mu_try = int((mu_max + mu_min) * 0.5)
+    mu_try = ((mu_max + mu_min) * 0.5)
     N_try = np.sum(np.array([get_degeneracy(3, i) * (1 / (np.exp((1 / T) * (i - mu_try)) - 1)) for i in range(n + 1)]))
     return N_try, mu_try
 
@@ -55,14 +62,14 @@ def run_sim():
     :return:
     """
     N_arr = [10, 100, 1000, 10000]
-    N0_dict = {i: [] for i in N_arr}
-    N0_sq_dict = {j: [] for j in N_arr}
-    cv_dict = {k: [] for k in N_arr}
+    N_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
+    N_sq_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
+    cv_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
 
-    for N in N_arr:
+    for count, N in enumerate(N_arr):
         T_max = 25 if N == 10000 else 5 * np.log10(N)
-        N0_dict[N].append(T_max)
-        K = N
+        N_storage[count] = np.append(N_storage[count], T_max)  # save T_max
+        K = 1000
         for T in np.arange(0.2, T_max, 0.2):
             mu = find_chem_pot(N, T)
             energy_arr = np.sort(
@@ -77,26 +84,29 @@ def run_sim():
             while True:
                 for i in range(K):
                     val = inner_iteration(N, T, energy_arr, mu)
-                    N0_k += val * (val / N)
-                    N0_sq += (val / N) * (val ** 2)
+                    N0_k += val * (1 / N)
+                    N0_sq += (1 / N) * (val ** 2)
                 # N0_k /= K
                 # N0_sq /= K
                 big_delta = get_delta(T)
                 if abs(N0_k - N0_avg) / N0_k <= big_delta:
-                    print(f"*** converged after {K} steps ***")
+                    # print(f"*** converged after {K} steps ***")
                     break  # converged, leave loop
                 else:  # didnt converge, edit parameters and run again
                     N0_avg = N0_k
                     K = 2 * K
 
             # save system
-            N0_dict[N].append(N0_k / N)
-            N0_sq_dict[N].append(np.sqrt(N0_sq - N0_k ** 2) / N0_k)
+            N_storage[count] = np.append(N_storage[count], N0_k)
+            N_sq_storage[count] = np.append(N_sq_storage[count], N0_sq)
+            # N0_sq_dict[N].append(np.sqrt(N0_sq - N0_k ** 2) / N0_k)
             U_tot, U_tot_sq = calc_tot_energy(energy_arr, n_MAX, N)
-            cv_dict[N].append(calc_heat_cap(T, U_tot, U_tot_sq, N))
-    return N0_dict, N0_sq_dict, cv_dict
+            cv_storage[count] = np.append(cv_storage[count], calc_heat_cap(T, U_tot, U_tot_sq, N))
+
+    return N_storage, N_sq_storage, cv_storage
 
 
+@njit
 def inner_iteration(N, T, energy_arr, mu):
     """
     simulates single iteration of system.
@@ -105,11 +115,11 @@ def inner_iteration(N, T, energy_arr, mu):
     :param energy_arr: sorted array of particles and their energy levels.
     :param mu: chemical potential of system.
     """
-    particle = np.randint(low=0, high=N)  # randomly choose particle
+    particle = np.random.randint(0, high=N)  # randomly choose particle
     energy_level = energy_arr[particle]
-    p = np.random.uniform(low=0, high=1)
-    if particle in [0, N - 1]:
-
+    p = np.random.uniform(0, 1)
+    if energy_level in [0, n_MAX]:
+        return handle_edges(particle, energy_level, T, mu, energy_arr, p)
 
     elif p <= dec_energy_prob(energy_level, T, mu):  # particles give 1 energy unit to heat bath
         energy_arr[particle] -= 1
@@ -119,6 +129,7 @@ def inner_iteration(N, T, energy_arr, mu):
     return np.count_nonzero(energy_arr == 0)
 
 
+@njit
 def dec_energy_prob(n, T, mu):
     """
     calculates the probability for a particle to give away a single energy unit
@@ -127,16 +138,48 @@ def dec_energy_prob(n, T, mu):
     :param n: current number of energy units
     """
     mone = get_degeneracy(THREE_D, n - 1) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
+    mehane = mone + get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
+    return mone / mehane
+
+
+@njit
+def inc_energy_prob(n, T, mu):
+    """
+    calculates the probability for a particle to give away a single energy unit
+    :param n: int -current number of energy units
+    :param T: float - temperature of system
+    :param mu: float - chemical potential of system
+    """
+    mone = get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
     mehane = mone + get_degeneracy(THREE_D, n - 1) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
     return mone / mehane
 
 
-def handle_edges(idx, n, T, mu):
+@njit
+def handle_edges(idx, n, T, mu, energy_arr, p):
+    """
+    helper function, handles cases for highest energy/base level energy.
+    """
     # TODO: handle edge cases
-    
+    if n == BASE_ENERGY:
+        mone = get_degeneracy(THREE_D, BASE_ENERGY) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
+        mehane = mone + get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
+        if p <= mone / mehane:  # stays at same energy level
+            return np.count_nonzero(energy_arr == 0)
+        else:
+            energy_arr[idx] += 1
+            return np.count_nonzero(energy_arr == 0)
+    else:  # n = n_max
+        mone = get_degeneracy(THREE_D, n - 1) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
+        mehane = mone + get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
+        if p <= mone / mehane:  # decrease energy
+            energy_arr[idx] -= 1
+            return np.count_nonzero(energy_arr == 0)
+        else:  # stays at highest energy lvl
+            return np.count_nonzero(energy_arr == 0)
 
 
-
+@njit
 def get_delta(T):
     """
     :param T: float - temperature in system
@@ -149,6 +192,7 @@ def get_delta(T):
         return 10 ** -2
 
 
+@njit
 def calc_heat_cap(T, U_tot, U_tot_sq, N):
     """
     :param T: float - system temperature
@@ -160,6 +204,7 @@ def calc_heat_cap(T, U_tot, U_tot_sq, N):
     return (1 / N) * ((U_tot_sq / (T ** 2)) - (U_tot ** 2) / (T ** 2))
 
 
+@njit
 def calc_tot_energy(energy_arr, n_max, N):
     """
     calculates total energy avg
@@ -167,18 +212,18 @@ def calc_tot_energy(energy_arr, n_max, N):
     :param n_max: int - maximum energy level possible
     :param N: number of particles in system
     """
-    U_tot_avg = sum([n * (np.count_nonzero(energy_arr == n) / N) for n in range(n_max + 1)])
-    U_avg_sq = sum([(n ** 2) * (np.count_nonzero(energy_arr == n) / N) for n in range(n_max + 1)])
+    U_tot_avg = np.sum(np.array([n * (np.count_nonzero(energy_arr == n) / N) for n in range(n_max + 1)]))
+    U_avg_sq = np.sum(np.array([(n ** 2) * (np.count_nonzero(energy_arr == n) / N) for n in range(n_max + 1)]))
     return U_tot_avg, U_avg_sq
 
 
 if __name__ == '__main__':
     N0_dict, N0_sq_dict, cv_dict = run_sim()
-    for N in [10, 100, 1000, 10000]:
-        T_max = N0_dict[N][0]
+    for idx, N in enumerate([10, 100, 1000, 10000]):
+        T_max = N0_dict[idx][0]
         N0_arr = N0_dict[N][1:]
-        N0_sq_arr = N0_sq_dict[N]
-        cv = cv_dict[N]
+        N0_sq_arr = N0_sq_dict[idx]
+        cv = cv_dict[idx]
         T_arr = np.arange(0.2, T_max, 0.2)
 
         plt.plot(T_arr, N0_arr), plt.title(r"$\frac{<N_0>}{N}$ vs. T"), plt.xlabel("Temperature"), plt.ylabel(
