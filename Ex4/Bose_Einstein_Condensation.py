@@ -8,7 +8,6 @@ n_MAX = 100
 BASE_ENERGY = 0
 
 
-@njit
 def get_degeneracy(dim, n):
     """
     returns the degeneracy of the n-th energy level
@@ -21,7 +20,6 @@ def get_degeneracy(dim, n):
         return 1
 
 
-@njit
 def find_chem_pot(N, T, n=n_MAX):
     """
 
@@ -41,7 +39,6 @@ def find_chem_pot(N, T, n=n_MAX):
     return mu_try
 
 
-@njit
 def update_mu(T, mu_max, mu_min, n):
     """
 
@@ -61,7 +58,7 @@ def run_sim():
 
     :return:
     """
-    N_arr = [10, 100, 1000, 10000]
+    N_arr = [10, 100]
     N_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
     N_sq_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
     cv_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
@@ -69,45 +66,67 @@ def run_sim():
     for count, N in enumerate(N_arr):
         T_max = 25 if N == 10000 else 5 * np.log10(N)
         N_storage[count] = np.append(N_storage[count], T_max)  # save T_max
-        K = 1000
+        K = 50000
+        energy_arr = None
         for T in np.arange(0.2, T_max, 0.2):
+            # print("*************************************")
+            # print(f"*** Starting T = {T} for N = {N} ***")
+            # print("*************************************")
             mu = find_chem_pot(N, T)
-            energy_arr = np.sort(
-                np.random.randint(low=0, high=n_MAX + 1, size=(N,)))  # init array with random energy levels.
+            energy_arr = np.sort(np.concatenate([np.zeros(int((N * 0.7), )), np.random.randint(0, n_MAX + 1, size=(
+                int(N * 0.3, )))])) if T == 0.2 else energy_arr  # init array with random energy levels.
+            pi_n = np.cumsum(np.array([np.count_nonzero(energy_arr == n) / N for n in range(n_MAX + 1)]))
             for i in range(int(K / 2)):  # run until initial conditions are erased
-                inner_iteration(N, T, energy_arr, mu)
-            N0_avg = 0
+                inner_iteration(N, T, mu, pi_n)
+            print("done erasing initial conditions")
+            # create <N_0>_K/2
+            N0_k_half = 0
             for i in range(int(K / 2)):
-                N0_avg += inner_iteration(N, T, energy_arr, mu)
-            N0_avg = N0_avg / int(K / 2)
+                inner_iteration(N, T, mu, pi_n)
+                N0_k_half += N * pi_n[0]
+            N0_k_half = N0_k_half / K
+
+            # create <N_0>_K
             N0_k, N0_sq = 0, 0
-            while True:
-                for i in range(K):
-                    val = inner_iteration(N, T, energy_arr, mu)
-                    N0_k += val * (1 / N)
-                    N0_sq += (1 / N) * (val ** 2)
-                # N0_k /= K
-                # N0_sq /= K
-                big_delta = get_delta(T)
-                if abs(N0_k - N0_avg) / N0_k <= big_delta:
-                    # print(f"*** converged after {K} steps ***")
-                    break  # converged, leave loop
-                else:  # didnt converge, edit parameters and run again
-                    N0_avg = N0_k
-                    K = 2 * K
+            K, N0_k, N0_sq = converge_iter(K, N, N0_k_half, N0_k, N0_sq, T, energy_arr, mu, pi_n)
 
             # save system
             N_storage[count] = np.append(N_storage[count], N0_k)
             N_sq_storage[count] = np.append(N_sq_storage[count], N0_sq)
-            # N0_sq_dict[N].append(np.sqrt(N0_sq - N0_k ** 2) / N0_k)
             U_tot, U_tot_sq = calc_tot_energy(energy_arr, n_MAX, N)
             cv_storage[count] = np.append(cv_storage[count], calc_heat_cap(T, U_tot, U_tot_sq, N))
 
     return N_storage, N_sq_storage, cv_storage
 
 
-@njit
-def inner_iteration(N, T, energy_arr, mu):
+def converge_iter(K, N, N0_avg, N0_k, N0_sq, T, energy_arr, mu, pi_n):
+    """
+    inner iteration for convergence.
+    """
+    while True:
+        for i in range(K):
+            inner_iteration(N, T, mu, pi_n)
+            N0_k += N * pi_n[0]
+            N0_sq += (N * pi_n[0]) ** 2
+        N0_k /= K
+        N0_sq /= K
+        big_delta = get_delta(T)
+        print(f"Convergance Error = {abs(N0_k - N0_avg) / N0_k}\n")
+        if abs(N0_k - N0_avg) / N0_k <= big_delta:
+            # print("**********************************")
+            # print(f"*** converged after {K} steps ***")
+            # print("**********************************\n")
+            break  # converged, leave loop
+        else:  # didnt converge, edit parameters and run again
+            N0_avg = N0_k
+            # print("*********************************************")
+            # print(f"*** Not converged - updating to K = {2 * K}***")
+            # print("*********************************************\n")
+            K = 2 * K
+    return K, N0_k, N0_sq
+
+
+def inner_iteration(N, T, mu, pi_n):
     """
     simulates single iteration of system.
     :param N: int - number of particles.
@@ -115,21 +134,37 @@ def inner_iteration(N, T, energy_arr, mu):
     :param energy_arr: sorted array of particles and their energy levels.
     :param mu: chemical potential of system.
     """
-    particle = np.random.randint(0, high=N)  # randomly choose particle
-    energy_level = energy_arr[particle]
     p = np.random.uniform(0, 1)
-    if energy_level in [0, n_MAX]:
-        return handle_edges(particle, energy_level, T, mu, energy_arr, p)
+    particle, i = None, -1
+    for n in range(len(pi_n)):
+        low = pi_n[n - 1] if n != 0 else 0
+        if low < p <= pi_n[n]:
+            particle = n
+            break
+    if particle in [0, 100]:
+        handle_edges()
+    unit = 1 / N
+    if p <= dec_energy_prob(particle, T, mu):  # particles give 1 energy unit to heat bath
 
-    elif p <= dec_energy_prob(energy_level, T, mu):  # particles give 1 energy unit to heat bath
-        energy_arr[particle] -= 1
+        pi_n[particle - 1] += unit
+
     else:
-        energy_arr[particle] += 1
-    np.sort(energy_arr)
-    return np.count_nonzero(energy_arr == 0)
+        pi_n[particle] -= unit
 
 
-@njit
+def bubble_value(energy_arr, particle, pos_or_neg):
+    """
+    moves the particle to correct location to maintain hierarchy
+    :param energy_arr:
+    :param particle: original index of particle
+    :param pos_or_neg: positive/negative 1 depends if giving or receiving energy
+    """
+    while energy_arr[particle + pos_or_neg] > energy_arr[particle]:
+        energy_arr[particle + pos_or_neg], energy_arr[particle] = energy_arr[particle], energy_arr[
+            particle + pos_or_neg]
+        particle += pos_or_neg
+
+
 def dec_energy_prob(n, T, mu):
     """
     calculates the probability for a particle to give away a single energy unit
@@ -142,44 +177,20 @@ def dec_energy_prob(n, T, mu):
     return mone / mehane
 
 
-@njit
-def inc_energy_prob(n, T, mu):
-    """
-    calculates the probability for a particle to give away a single energy unit
-    :param n: int -current number of energy units
-    :param T: float - temperature of system
-    :param mu: float - chemical potential of system
-    """
-    mone = get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
-    mehane = mone + get_degeneracy(THREE_D, n - 1) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
-    return mone / mehane
-
-
-@njit
-def handle_edges(idx, n, T, mu, energy_arr, p):
+def handle_edges(n, mu, T):
     """
     helper function, handles cases for highest energy/base level energy.
     """
-    # TODO: handle edge cases
-    if n == BASE_ENERGY:
-        mone = get_degeneracy(THREE_D, BASE_ENERGY) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
+    if n == 0:
+        mone = get_degeneracy(THREE_D, n) / (np.exp((1 / T) * (- mu)) - 1)
         mehane = mone + get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
-        if p <= mone / mehane:  # stays at same energy level
-            return np.count_nonzero(energy_arr == 0)
-        else:
-            energy_arr[idx] += 1
-            return np.count_nonzero(energy_arr == 0)
-    else:  # n = n_max
+
+    else:  # n == n_MAX
         mone = get_degeneracy(THREE_D, n - 1) / (np.exp((1 / T) * (n - 1 - mu)) - 1)
-        mehane = mone + get_degeneracy(THREE_D, n + 1) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
-        if p <= mone / mehane:  # decrease energy
-            energy_arr[idx] -= 1
-            return np.count_nonzero(energy_arr == 0)
-        else:  # stays at highest energy lvl
-            return np.count_nonzero(energy_arr == 0)
+        mehane = + get_degeneracy(THREE_D, n) / (np.exp((1 / T) * (n + 1 - mu)) - 1)
+    return mone / mehane
 
 
-@njit
 def get_delta(T):
     """
     :param T: float - temperature in system
@@ -192,7 +203,6 @@ def get_delta(T):
         return 10 ** -2
 
 
-@njit
 def calc_heat_cap(T, U_tot, U_tot_sq, N):
     """
     :param T: float - system temperature
@@ -204,7 +214,6 @@ def calc_heat_cap(T, U_tot, U_tot_sq, N):
     return (1 / N) * ((U_tot_sq / (T ** 2)) - (U_tot ** 2) / (T ** 2))
 
 
-@njit
 def calc_tot_energy(energy_arr, n_max, N):
     """
     calculates total energy avg
@@ -219,7 +228,7 @@ def calc_tot_energy(energy_arr, n_max, N):
 
 if __name__ == '__main__':
     N0_dict, N0_sq_dict, cv_dict = run_sim()
-    for idx, N in enumerate([10, 100, 1000, 10000]):
+    for idx, N in enumerate([10, 100]):
         T_max = N0_dict[idx][0]
         N0_arr = N0_dict[N][1:]
         N0_sq_arr = N0_sq_dict[idx]
