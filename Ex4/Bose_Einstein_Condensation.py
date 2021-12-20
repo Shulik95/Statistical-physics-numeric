@@ -60,19 +60,19 @@ def run_sim():
 
     :return:
     """
-    N_arr = [10, 100]
-    N_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
-    N_sq_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
-    cv_storage = np.array([np.array([]), np.array([]), np.array([]), np.array([])])
+    N_arr = [10]
+    N_storage = [[],[],[],[]]
+    N_sq_storage = [[],[],[],[]]
+    cv_storage = [[],[],[],[]]
 
     for count, N in enumerate(N_arr):
         T_max = 25 if N == 10000 else 5 * np.log10(N)
-        N_storage[count] = np.append(N_storage[count], T_max)  # save T_max
-        K = 50000
+        # N_storage[count] = np.append(N_storage[count], T_max)  # save T_max
         energy_arr = np.sort(np.concatenate([np.zeros(int((N * 0.7), )), np.random.randint(0, n_MAX + 1, size=(
             int(N * 0.3, )))]))  # init array with random energy levels.
         pi_n = np.cumsum(np.array([np.count_nonzero(energy_arr == n) / N for n in range(n_MAX + 1)]))
         for T in np.arange(0.2, T_max, 0.2):
+            K = 50000
             print("*************************************")
             print(f"*** Starting T = {T} for N = {N} ***")
             print("*************************************")
@@ -92,10 +92,10 @@ def run_sim():
             K, N0_k, N0_sq = converge_iter(K, N, N0_k_half, N0_k, N0_sq, T, energy_arr, mu, pi_n)
 
             # save system
-            N_storage[count] = np.append(N_storage[count], N0_k)
-            N_sq_storage[count] = np.append(N_sq_storage[count], N0_sq)
+            N_storage[count].append(N0_k)
+            N_sq_storage[count].append(N0_sq)
             U_tot, U_tot_sq = calc_tot_energy(energy_arr, n_MAX, N)
-            cv_storage[count] = np.append(cv_storage[count], calc_heat_cap(T, U_tot, U_tot_sq, N))
+            cv_storage[count].append(calc_heat_cap(T, U_tot, U_tot_sq, N))
 
     return N_storage, N_sq_storage, cv_storage
 
@@ -231,17 +231,20 @@ def calc_tot_energy(energy_arr, n_max, N):
 
 
 if __name__ == '__main__':
-    N0_dict, N0_sq_dict, cv_dict = run_sim()
-    for idx, N in enumerate([10, 100]):
-        T_max = N0_dict[idx][0]
-        N0_arr = N0_dict[N][1:]
-        N0_sq_arr = N0_sq_dict[idx]
-        cv = cv_dict[idx]
+    N0_storage, N0_sq_storage, cv_storage = run_sim()
+    for idx, N in enumerate([10]):
+        T_max = 25 if N == 10000 else 5 * np.log10(N)
+        N0_arr = N0_storage[idx]
+        N0_sq_arr = N0_sq_storage[idx]
+        cv = cv_storage[idx]
         T_arr = np.arange(0.2, T_max, 0.2)
-
-        plt.plot(T_arr, N0_arr), plt.title(r"$\frac{<N_0>}{N}$ vs. T"), plt.xlabel("Temperature"), plt.ylabel(
+        Y_err = np.sqrt(np.array(N0_sq_arr) - np.square(np.array(N0_arr)))
+        plt.scatter(T_arr, np.array(N0_arr)/N),
+        plt.errorbar(T_arr, np.array(N0_arr)/N, yerr=Y_err, linestyle='None', color='r')
+        temp = f"N = {N}: "
+        plt.title(temp + r"$\frac{<N_0>}{N}$ vs. T"), plt.xlabel("Temperature"), plt.ylabel(
             r"$\frac{<N_0>}{N}$")
         plt.show()
 
-        plt.plot(T_arr, cv), plt.title(r"$C_v$ vs. T"), plt.xlabel("Temperature"), plt.ylabel(r"$C_v$")
+        plt.scatter(T_arr, cv), plt.title(r"$C_v$ vs. T"), plt.xlabel("Temperature"), plt.ylabel(r"$C_v$")
         plt.show()
