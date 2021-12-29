@@ -84,7 +84,7 @@ def calc_U(grid, J, mu_B):
 
 def K_iterations(T, K, eta, h, N=16):
     """
-
+    runs K iteration over the system, creating
     :param T:
     :param K:
     :param eta:
@@ -101,6 +101,7 @@ def K_iterations(T, K, eta, h, N=16):
     while step_counter < K // 2:
         step_counter += scan_and_flip(grid, mu_B, J, T)
 
+    # create M_k/2
     M_k_half, step_counter = 0, 0
     while step_counter < K // 2:
         step_counter += scan_and_flip(grid, mu_B, J, T)
@@ -109,6 +110,7 @@ def K_iterations(T, K, eta, h, N=16):
             M_k_half += np.sum(grid)
     M_k_half /= (iter_counter / nsweep)
 
+    # create M_k
     M_k, M_k_sq, step_counter, iter_counter, U, U_sq = 0, 0, 0, 0, 0, 0
     while step_counter < K:
         step_counter += scan_and_flip(grid, mu_B, J, T)
@@ -133,6 +135,7 @@ def run_sim():
     for eta in eta_range:
         h = 0
 
-
 if __name__ == '__main__':
     pass
+
+
