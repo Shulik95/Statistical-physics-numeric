@@ -1,7 +1,10 @@
 import numpy as np
 from matplotlib import pyplot as plt
+from numba import njit
+import os
 
 
+@njit
 def calc_p(mu_B, J, grid, i, j, T):
     """
 
@@ -23,6 +26,7 @@ def calc_p(mu_B, J, grid, i, j, T):
     return 1 / (np.exp((-2 / T) * epsilon_now) + 1)
 
 
+@njit
 def scan_and_flip(grid, mu_B, J, T):
     """
 
@@ -44,6 +48,7 @@ def scan_and_flip(grid, mu_B, J, T):
     return counter
 
 
+@njit
 def check_converge(M_k, M_k_half, delta=10 ** -3):
     """
 
@@ -52,10 +57,12 @@ def check_converge(M_k, M_k_half, delta=10 ** -3):
     :param delta:
     :return: return True if error converged false otherwise.
     """
-    print(f'Error is: {np.abs(M_k - M_k_half) / np.abs(M_k)}')
-    return np.abs(M_k - M_k_half) / np.abs(M_k) <= delta
+    # print('Error is: ' + str({np.abs(M_k - M_k_half) / np.abs(M_k)}))
+    err = np.abs(M_k - M_k_half) / np.abs(M_k)
+    return err <= delta if M_k != 0 else False
 
 
+@njit
 def calc_heat_cap(T, U_tot, U_tot_sq, N):
     """
     :param T: float - system temperature
@@ -67,6 +74,7 @@ def calc_heat_cap(T, U_tot, U_tot_sq, N):
     return (1 / (N * (T ** 2))) * (U_tot_sq - U_tot ** 2)
 
 
+@njit
 def calc_U(grid, J, mu_B):
     """
 
@@ -85,6 +93,7 @@ def calc_U(grid, J, mu_B):
     return -1 * u_inter
 
 
+@njit
 def K_iterations(T, K, mu_B, J, grid, M_k_half, nsweep):
     """
     runs K iteration over the system, creating
@@ -97,21 +106,30 @@ def K_iterations(T, K, mu_B, J, grid, M_k_half, nsweep):
     """
 
     # create M_k
-    step_counter, M_k, U, U_sq, iter_counter = 0, 0, 0, 0, 0
-    while step_counter < K:
-        step_counter += scan_and_flip(grid, mu_B, J, T)
+    step_counter, M_k, U, U_sq, iter_counter, unchanged = 0, 0, 0, 0, 0, 0
+    while step_counter < K and unchanged < 10000:
+        curr_steps = scan_and_flip(grid, mu_B, J, T)
+
+        # handles cases where grid doesnt change
+        if curr_steps == 0:
+            unchanged += 1
+        elif curr_steps > 0:
+            unchanged = 0
+        step_counter += curr_steps
         iter_counter += 1
         if iter_counter % nsweep == 0:  # sample every 5th iteration
             grid_sum, U_tot = np.sum(grid), calc_U(grid, J, mu_B)
             M_k += grid_sum
             U += U_tot
             U_sq += U_tot ** 2
+
     M_k /= (iter_counter / nsweep)
     U /= (iter_counter / nsweep)
     U_sq /= (iter_counter / nsweep)
-    return check_converge(M_k, M_k_half), M_k, U, U_sq
+    return check_converge(M_k, M_k_half), M_k, U, U_sq, step_counter, iter_counter
 
 
+@njit
 def first_iter(J, K, T, grid, iter_counter, mu_B, nsweep, step_counter):
     """
 
@@ -140,31 +158,123 @@ def first_iter(J, K, T, grid, iter_counter, mu_B, nsweep, step_counter):
     return M_k_half
 
 
-def run_sim(N=32):
-    eta_range = np.insert(np.delete(np.arange(0.1, 0.85, 0.05), 7), 7, np.arange(0.42, 0.46, 0.005))
-    M_k_arr, U_arr, U_sq_arr = [], [], []
-    grid = np.random.choice([1, -1], size=(N, N))
-    T, h = 1, 0
-    # B=0
+@njit
+def onsager(eta):
+    """
 
-    for eta in eta_range:
+    :param eta:
+    :return:
+    """
+    z = np.exp(-2 * eta)
+    mone = ((1 + z ** 2) ** (1 / 4)) * ((1 - 6 * z ** 2 + z ** 4) ** (1 / 8))
+    mehane = np.sqrt((1 - z ** 2))
+    return mone / mehane
+
+
+def convergence(sqrt_N, eta_range1, h=0, magnetic=False):
+    M_k_arr, U_arr, U_sq_arr, total_tries, tot_flips = [], [], [], [], []
+    grid = np.random.choice([1, -1], (sqrt_N, sqrt_N))
+    T = 1
+    # B=0
+    # plt.imshow(grid), plt.show()
+    for eta in eta_range1:
+        print("Starting eta = " + str(eta))
         K = 10000
         step_counter, iter_counter, nsamples, nsweep = 0, 0, 0, 5
         mu_B = h * T
         J = eta * T
-
-        M_k_half = first_iter(J, K, T, grid, iter_counter, mu_B, nsweep, step_counter)
+        if eta == eta_range1[0]:
+            M_k_half = first_iter(J, K, T, grid, iter_counter, mu_B, nsweep, step_counter)
 
         converged, M_k, U, U_sq = False, 0, 0, 0
-        while not converged and K <= 10 ** 8:
-            print(f"Not converged, Running with K ={K}")
-            converged, M_k, U, U_sq = K_iterations(T, K, mu_B, J, grid, M_k_half, nsweep)
+        while not converged and K <= 10 ** 6:
+            # print(f"Not converged, Running with K ={K}\n")
+            converged, M_k, U, U_sq, step_counter, iter_counter = K_iterations(T, K, mu_B, J, grid, M_k_half, nsweep)
+            # plt.imshow(grid), plt.show()
             K *= 2
             M_k_half = M_k
-        print(f"## Converged for K = {K} ##")
-        M_k_arr.append(abs(M_k)), U_arr.append(U), U_sq_arr.append(U_sq)  # save converged state
+        print("## Converged for K = " + str(K))
+        M_k_arr.append(abs(M_k)), U_arr.append(U), U_sq_arr.append(U_sq), total_tries.append(
+            iter_counter * sqrt_N ** 2), tot_flips.append(step_counter)
+    if magnetic:
+        return M_k_arr, U_arr
+    return M_k_arr[:-1], U_arr[:-1], U_sq_arr[:-1], total_tries, tot_flips
 
-    plt.scatter(eta_range, M_k_arr), plt.title(r"$<M_k> vs. \eta$"), plt.xlabel(r"$eta$"), plt.ylabel(r"$<M_k>$")
+
+def run_sim(sqrt_N=16):
+    """
+
+    :param sqrt_N:
+    :return:
+    """
+    # create directory for plots
+    current_dir = os.getcwd()
+    final_dir = os.path.join(current_dir, rf'plots for N = {sqrt_N ** 2}')
+    try:
+        os.mkdir(final_dir)
+    except OSError:
+        print("Directory exists, no need to create a new one")
+
+    eta_range1 = np.append(np.insert(np.delete(np.arange(0.1, 0.85, 0.05), 7), 7, np.arange(0.42, 0.46, 0.005)), 2)
+    M_k_arr, U_arr, U_sq_arr, total_tries, tot_flips = convergence(sqrt_N, eta_range1)
+
+    # plot magnetization
+    plt.scatter(eta_range1[:-1], np.array(M_k_arr) / np.square(sqrt_N), label=r"$\frac{<M_k>}{N}$"), plt.title(
+        r"$\frac{<M_k>}{N} vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(
+        r"$\frac{<M_k>}{N}$")
+    plt.scatter(np.arange(0.4407, 0.8, 0.05), [onsager(eta) for eta in np.arange(0.4407, 0.8, 0.05)], marker='D',
+                label="Onsager")
+    plt.axvline(x=0.4406, ymin=0, linestyle='-.', color='k', label=r'$\eta_c$')
+    plt.legend()
+    plt.savefig(f"plots for N = {sqrt_N**2}/Magnetization vs eta.jpeg")
+    plt.show()
+
+    # plot energy
+    plt.scatter(eta_range1[:-1], np.array(U_arr) / sqrt_N ** 2), plt.title(r"$\frac{<U>}{N} vs. \eta$"), plt.xlabel(
+        r"$\eta$"), plt.ylabel(r"$\frac{<U>}{N}$")
+    plt.savefig(f"plots for N = {sqrt_N**2}/Energy_vs_eta.jpeg")
+    plt.show()
+
+    # plot c_v
+    plt.scatter(eta_range1[:-1], calc_heat_cap(1, np.array(U_arr), np.array(U_sq_arr), sqrt_N ** 2))
+    plt.title(r"$c_v vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(r"$c_v$")
+    plt.savefig(f'plots for N = {sqrt_N**2}/c_v vs eta.jpeg')
+    plt.show()
+
+    # plot ratio:
+    plt.scatter(eta_range1, np.divide(np.array(tot_flips), np.array(total_tries)))
+    plt.title(r"$Flip Ratio vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(r"$Flip Ratio$")
+    plt.savefig(f'plots for N = {sqrt_N**2}/Flip_Ratio.jpeg')
+    plt.show()
+    # B != 0
+
+    eta_range2 = np.arange(0.1, 0.82, 0.05)
+    h_range = [0, 0.1, 0.5, 1.0]
+    for h in h_range:
+        M_k_arr, U_arr = convergence(sqrt_N, eta_range2, h, True)
+
+        # plot magnetization
+        plt.subplot(121)
+        plt.scatter(eta_range2, M_k_arr, label=f'h={h}')
+
+        # plot energy
+        plt.subplot(122)
+        plt.scatter(eta_range2, np.array(U_arr) / sqrt_N ** 2, label=f'h={h}')
+
+    plt.subplot(121)
+    plt.legend()
+    plt.title(r"$\frac{<M_k>}{N} vs. \eta$"), plt.xlabel(
+        r"$\eta$"), plt.ylabel(
+        r"$\frac{<M_k>}{N}$")
+
+    plt.subplot(122)
+    plt.legend()
+    plt.title(r"$\frac{<U>}{N} vs. \eta$"), plt.xlabel(
+        r"$\eta$"), plt.ylabel(r"$\frac{<U>}{N}$")
+
+    plt.tight_layout()
+    plt.figure(figsize=(20, 20))
+    plt.savefig(f"plots for N = {sqrt_N**2}/Magnetization(Energy) vs eta with h.jpeg")
     plt.show()
 
 
