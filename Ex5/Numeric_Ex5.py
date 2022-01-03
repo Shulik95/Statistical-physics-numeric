@@ -187,8 +187,8 @@ def convergence(sqrt_N, eta_range1, h=0, magnetic=False):
             M_k_half = first_iter(J, K, T, grid, iter_counter, mu_B, nsweep, step_counter)
 
         converged, M_k, U, U_sq = False, 0, 0, 0
-        while not converged and K <= 10 ** 6:
-            # print(f"Not converged, Running with K ={K}\n")
+        while not converged and K <= 10 ** 8:
+            print(f"Not converged, Running with K ={K}\n")
             converged, M_k, U, U_sq, step_counter, iter_counter = K_iterations(T, K, mu_B, J, grid, M_k_half, nsweep)
             # plt.imshow(grid), plt.show()
             K *= 2
@@ -201,7 +201,7 @@ def convergence(sqrt_N, eta_range1, h=0, magnetic=False):
     return M_k_arr[:-1], U_arr[:-1], U_sq_arr[:-1], total_tries, tot_flips
 
 
-def run_sim(sqrt_N=16):
+def run_sim(sqrt_N=32):
     """
 
     :param sqrt_N:
@@ -222,29 +222,29 @@ def run_sim(sqrt_N=16):
     plt.scatter(eta_range1[:-1], np.array(M_k_arr) / np.square(sqrt_N), label=r"$\frac{<M_k>}{N}$"), plt.title(
         r"$\frac{<M_k>}{N} vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(
         r"$\frac{<M_k>}{N}$")
-    plt.scatter(np.arange(0.4407, 0.8, 0.05), [onsager(eta) for eta in np.arange(0.4407, 0.8, 0.05)], marker='D',
+    plt.scatter(np.arange(0.4407, 0.8, 0.03), [onsager(eta) for eta in np.arange(0.4407, 0.8, 0.03)], marker='D',
                 label="Onsager")
     plt.axvline(x=0.4406, ymin=0, linestyle='-.', color='k', label=r'$\eta_c$')
     plt.legend()
-    plt.savefig(f"plots for N = {sqrt_N**2}/Magnetization vs eta.jpeg")
+    plt.savefig(f"plots for N = {sqrt_N ** 2}/Magnetization vs eta.jpeg")
     plt.show()
 
     # plot energy
     plt.scatter(eta_range1[:-1], np.array(U_arr) / sqrt_N ** 2), plt.title(r"$\frac{<U>}{N} vs. \eta$"), plt.xlabel(
         r"$\eta$"), plt.ylabel(r"$\frac{<U>}{N}$")
-    plt.savefig(f"plots for N = {sqrt_N**2}/Energy_vs_eta.jpeg")
+    plt.savefig(f"plots for N = {sqrt_N ** 2}/Energy_vs_eta.jpeg")
     plt.show()
 
     # plot c_v
     plt.scatter(eta_range1[:-1], calc_heat_cap(1, np.array(U_arr), np.array(U_sq_arr), sqrt_N ** 2))
-    plt.title(r"$c_v vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(r"$c_v$")
-    plt.savefig(f'plots for N = {sqrt_N**2}/c_v vs eta.jpeg')
+    plt.title(r"$c_v  vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(r"$c_v$")
+    plt.savefig(f'plots for N = {sqrt_N ** 2}/c_v vs eta.jpeg')
     plt.show()
 
     # plot ratio:
     plt.scatter(eta_range1, np.divide(np.array(tot_flips), np.array(total_tries)))
     plt.title(r"$Flip Ratio vs. \eta$"), plt.xlabel(r"$\eta$"), plt.ylabel(r"$Flip Ratio$")
-    plt.savefig(f'plots for N = {sqrt_N**2}/Flip_Ratio.jpeg')
+    plt.savefig(f'plots for N = {sqrt_N ** 2}/Flip_Ratio.jpeg')
     plt.show()
     # B != 0
 
@@ -255,7 +255,7 @@ def run_sim(sqrt_N=16):
 
         # plot magnetization
         plt.subplot(121)
-        plt.scatter(eta_range2, M_k_arr, label=f'h={h}')
+        plt.scatter(eta_range2, np.array(M_k_arr) / sqrt_N**2 , label=f'h={h}')
 
         # plot energy
         plt.subplot(122)
@@ -274,7 +274,7 @@ def run_sim(sqrt_N=16):
 
     plt.tight_layout()
     plt.figure(figsize=(20, 20))
-    plt.savefig(f"plots for N = {sqrt_N**2}/Magnetization(Energy) vs eta with h.jpeg")
+    plt.savefig(f"plots for N = {sqrt_N ** 2}/Magnetization(Energy)_vs_eta(h).jpeg")
     plt.show()
 
 
